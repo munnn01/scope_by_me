@@ -33,7 +33,9 @@ Trong các hệ thống **Video Coding for Machines (VCM)** triển khai ngoài 
 
 Kho mã nguồn này trình bày **T-SCOPE v3**, một khung nghiên cứu thực nghiệm đối chứng chặt chẽ cho bài toán nén video độ trễ thấp (`IPPP`, `keyint=4`, `aq-mode=2`) phục vụ phát hiện người đi bộ, với **phương pháp đề xuất chính là `spatial_qp`** (*Joint Smoothstep-Saturated Semantic Pre-Editing & Standard-Compliant QG `quantOffsets` Allocation*) đặt trong một thiết kế nhân tố $2\times 2$ hoàn chỉnh (`spatial`, `spatial_qp`, `temporal`, `temporal_qp`) cùng hai nhánh đối chứng độc lập (`temporal_qp_proxy`, `scope_paper_adapted`).
 
-![Kiến trúc tổng thể phương pháp đề xuất spatial_qp và thiết kế thực nghiệm nhân tố 2x2](docs/figures/fig_pipeline_architecture.png)
+![Tổng quan kiến trúc hệ thống VCM T-SCOPE v3 (spatial_qp): tiền xử lý ngữ nghĩa đa tỷ lệ, phân bổ lượng tử hóa QG hợp chuẩn và huấn luyện STE kép](docs/figures/fig_pipeline_architecture.png)
+
+*Hình 1: Tổng quan kiến trúc hệ thống **T-SCOPE v3 (`spatial_qp`)** theo chuẩn biểu diễn Video Coding for Machines (tệp nguồn vector có thể chỉnh sửa trực tiếp trên `draw.io`: [`docs/figures/fig_pipeline_architecture.drawio`](docs/figures/fig_pipeline_architecture.drawio); bản in vector PDF: [`docs/figures/fig_pipeline_architecture.pdf`](docs/figures/fig_pipeline_architecture.pdf)).*
 
 ### Năm kết quả khoa học cốt lõi đã được kiểm chứng
 
@@ -547,7 +549,7 @@ scope_by_me/
 │   ├── t4_complexity_runtime.json             # Kết quả đo đạc phần cứng Tesla T4 & tốc độ mã hóa libx265
 │   └── cross_detector_bdbr.json               # Kết quả khái quát hóa Zero-Shot xuyên 6 họ kiến trúc Detector
 ├── docs/
-│   ├── figures/                   # Bộ 5 biểu đồ bài báo chất lượng cao (.png 300 DPI & .pdf vector)
+│   ├── figures/                   # Bộ 5 biểu đồ bài báo (.png 300 DPI, .pdf & tệp nguồn .drawio cho Hình 1)
 │   ├── SOTA_COMPARISON_METHODOLOGY.md # Phân loại học thuật & nguyên tắc đối sánh công bằng với 5 bài báo SOTA
 │   ├── V3_BDRATE_RESULTS.md       # Báo cáo tóm tắt thống kê BD-rate
 │   ├── V3_RESEARCH_PROTOCOL.md    # Đặc tả giao thức nghiên cứu khóa trước khi chạy thực nghiệm

@@ -1354,6 +1354,7 @@ def render_cross_detector_bdbr(
 def generate_all_figures(
     results_dir: Path = DEFAULT_RESULTS_DIR,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
+    overwrite_drawio_pipeline: bool = False,
 ) -> Dict[str, Tuple[Path, Path]]:
     """Generate all verified publication figures and return {figure_stem: (png_path, pdf_path)}."""
     configure_publication_style()
@@ -1365,7 +1366,18 @@ def generate_all_figures(
     rt_data = load_verified_json(results_dir / "t4_complexity_runtime.json")
 
     generated: Dict[str, Tuple[Path, Path]] = {}
-    generated["fig_pipeline_architecture"] = render_pipeline_architecture(bdr_data, rt_data, output_dir)
+    drawio_src = output_dir / "fig_pipeline_architecture.drawio"
+    drawio_png = output_dir / "fig_pipeline_architecture.png"
+    drawio_pdf = output_dir / "fig_pipeline_architecture.pdf"
+    if (
+        not overwrite_drawio_pipeline
+        and drawio_src.is_file()
+        and drawio_png.is_file()
+        and drawio_pdf.is_file()
+    ):
+        generated["fig_pipeline_architecture"] = (drawio_png, drawio_pdf)
+    else:
+        generated["fig_pipeline_architecture"] = render_pipeline_architecture(bdr_data, rt_data, output_dir)
     generated["fig_rd_curves_v3"] = render_rd_curves_v3(bdr_data, output_dir)
     generated["fig_factorial_and_slice_bdbr"] = render_factorial_and_slice_bdbr(bdr_data, diag_data, output_dir)
     generated["fig_pareto_speed_vs_bdbr"] = render_pareto_speed_vs_bdbr(bdr_data, rt_data, output_dir)
@@ -1392,8 +1404,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=DEFAULT_OUTPUT_DIR,
         help="Output directory for 300-DPI PNG and vector PDF figures",
     )
+    parser.add_argument(
+        "--overwrite-drawio-pipeline",
+        action="store_true",
+        help="Re-render Matplotlib fallback over fig_pipeline_architecture.{png,pdf} even if .drawio exists",
+    )
     args = parser.parse_args(argv)
-    generated = generate_all_figures(results_dir=args.results_dir, output_dir=args.output_dir)
+    generated = generate_all_figures(
+        results_dir=args.results_dir,
+        output_dir=args.output_dir,
+        overwrite_drawio_pipeline=args.overwrite_drawio_pipeline,
+    )
     summary = {
         stem: {"png": str(paths[0]), "pdf": str(paths[1])}
         for stem, paths in sorted(generated.items())
