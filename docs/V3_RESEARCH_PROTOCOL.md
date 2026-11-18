@@ -24,17 +24,17 @@ not an official reproduction or grounds for comparing published percentages dire
 
 ## Replication and data
 
-Seeds2026/2027/2028 give18 independent jobs. Accounts are compute slots; every
+Seeds 2026/2027/2028 give 18 independent jobs. Accounts are compute slots; every
 replicate sees the full MOT17-02/04/05/10 train split. No model soups, unequal
 variant partitions or held-out test selection. Validation: MOT17-09, every second
-nonoverlapping4-frame clip, severity0.3/0.7, same logical batch size as training.
+nonoverlapping 4-frame clip, severity 0.3/0.7, same logical batch size as training.
 Training teacher is pretrained Faster R-CNN R50-FPN v2; YOLOv8s is evaluation-only.
-Only x265 family0 is trained; unused embeddings do not establish cross-codec transfer.
+Only x265 family 0 is trained; unused embeddings do not establish cross-codec transfer.
 
-Initial configuration:512x512, clip4, batch2, accumulation2, AdamW lr1.5e-4,
-weight_decay1e-4, two-epoch warmup then18-epoch cosine to1e-6, max36epochs,
-patience10, min_epochs12, min_delta0.0005. Source/dependency/data hashes accompany
-checkpoints. A7.8-hour session cutoff saves resumable incomplete work; it is not
+Initial configuration: 512x512, clip 4, batch 2, accumulation 2, AdamW lr 1.5e-4,
+weight_decay 1e-4, two-epoch warmup then 18-epoch cosine to 1e-6, max 36 epochs,
+patience 10, min_epochs 12, min_delta 0.0005. Source/dependency/data hashes accompany
+checkpoints. A 7.8-hour session cutoff saves resumable incomplete work; it is not
 a convergence criterion. Continue incomplete jobs before final comparisons.
 
 Before mass dispatch, a GPU canary must show two genuine optimizer updates with
@@ -43,8 +43,8 @@ checkpoint verified readable/restorable. API acceptance or proxy-only smoke is i
 
 ## Evaluation and reporting
 
-Held-out MOT17-11:900frames; MOT17-13:748 complete-clip frames. Exclude749-750
-explicitly. Use512x512 bilinear square resizing, clip4, IPPP, CRF22/27/32/37,
+Held-out MOT17-11: 900 frames; MOT17-13: 748 complete-clip frames. Exclude 749-750
+explicitly. Use 512x512 bilinear square resizing, clip 4, IPPP, CRF 22/27/32/37,
 the same physical frames/GT/ignore/codec/source across methods and replicates.
 Anchor is the same clean-input codec path. Count actual MP4 video packet payload,
 excluding container/global headers. Report dataset-level pedestrian AP50/AP50:95,
@@ -61,13 +61,13 @@ strong significance claims.
 
 ## Research gates before a paper claim
 
-1. Complete all18 jobs and paired held-out evaluations. Retain failures, null
+1. Complete all 18 jobs and paired held-out evaluations. Retain failures, null
    metrics and source/config/detector/data identities. Publish raw artifacts.
 2. Show per-CRF total/P rates, not only BDBR. Measure temporal residuals or encoder
    modes before asserting that framewise editing harms inter-prediction.
 3. Measure GPU forward, end-to-end preprocessing, x265 encode time and peak VRAM
    separately with warmup/synchronized timing. Do not reuse v1/v2 or unrelated hardware FPS.
-4. Evaluate unseen detectors, longer GOP8/16/32 and another video dataset as new,
+4. Evaluate unseen detectors, longer GOP 8/16/32 and another video dataset as new,
    explicit protocols. Longer GOP changes frame coverage; do not silently mutate this one.
 5. Review current prior work before a broad novelty claim. Keep development and
    validation separate from the final held-out test.
@@ -75,5 +75,5 @@ strong significance claims.
 ## Historical audit limitation
 
 Committed `release_ckpts`, `outputs_kaggle_pool` and v2 figures/report remain v2.
-Original105 raw shard-variant files are absent in this clone; schema2 final-ready
-does not constitute an independently re-audited schema3 result.
+Original 105 raw shard-variant files are absent in this clone; schema 2 final-ready
+does not constitute an independently re-audited schema 3 result.

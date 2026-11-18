@@ -53,7 +53,7 @@ Kho mã nguồn này trình bày **T-SCOPE v3**, một khung nghiên cứu thự
 3. **Giải mã thực nghiệm tại sao tiền xử lý bất biến dịch chuyển + QG (`spatial_qp`) vượt hồi quy bù chuyển động 6-DOF (`temporal_qp`) trong HEVC độ trễ thấp GOP ngắn**:
    - Phép thử nhân tố $2\times 2$ cho thấy thêm gói thời gian (ước lượng chuyển động toàn cục 6-DOF Cauchy-IRLS + `TemporalConvGRUCell` + làm trơn nền EMA + hàm phạt thời gian) **không cải thiện BD-rate trung bình** trong cấu hình `IPPP keyint=4`: chuyển từ `spatial_qp` $\to$ `temporal_qp` làm tăng bitrate **`+5.45 ± 7.13%`** (FRCNN) và **`+5.29 ± 4.10%`** (YOLOv8s), mặc dù `temporal_qp` giúp thu hẹp phương sai giữa các seed xuống mức rất thấp (**`±0.94%`** trên FRCNN).
    - Kiểm toán phân tách lát cắt trên `412` I-frame và `1,236` P-frame thực ([`results/v3_slice_and_sequence_diagnostics.json`](results/v3_slice_and_sequence_diagnostics.json)) chỉ ra hai nguyên nhân vật lý gốc rễ:
-     1. **Quá độ khởi động lạnh ở khung `t1_P1` (`t1_P1` Cold-Start Transient)**: Ngay tại khung P đầu tiên sau I-frame — nơi trạng thái ẩn ConvGRU vừa chuyển từ $\mathbf{h}_0 = \mathbf{0}$ sang $\mathbf{h}_1 \neq \mathbf{0}$ — `temporal` chịu phạt **`+8.76%`** và `temporal_qp` chịu phạt **`+2.95%`** BD-rate, trước khi kịp hồi phục ở `t2_P2` (`-6.42%`) và `t3_P3` (`-10.15%`). Trong GOP dài 4, `P1` chiếm 1/3 tổng số P-frame. Ngược lại, `spatial_qp` duy trì BD-rate âm ở **mọi bước GOP** (`-16.08%`, `-6.77%`, `-11.42%`, `-11.30%`).
+     1. **Quá độ khởi động lạnh ở khung `t1_P1` (`t1_P1` Cold-Start Transient)**: Ngay tại khung P đầu tiên sau I-frame — nơi trạng thái ẩn ConvGRU vừa chuyển từ $\mathbf{h} _ 0 = \mathbf{0}$ sang $\mathbf{h} _ 1 \neq \mathbf{0}$ — `temporal` chịu phạt **`+8.76%`** và `temporal_qp` chịu phạt **`+2.95%`** BD-rate, trước khi kịp hồi phục ở `t2_P2` (`-6.42%`) và `t3_P3` (`-10.15%`). Trong GOP dài 4, `P1` chiếm 1/3 tổng số P-frame. Ngược lại, `spatial_qp` duy trì BD-rate âm ở **mọi bước GOP** (`-16.08%`, `-6.77%`, `-11.42%`, `-11.30%`).
      2. **Sụp đổ mô hình phẳng Affine 6-DOF dưới thị sai 3D mạnh (`MOT17-13` Bus Parallax)**: Trên camera xe buýt chạy nhanh `MOT17-13`, thị sai chiều sâu giữa tiền cảnh gần và nền xa làm phép warp 6-DOF toàn cục gây lệch cấu trúc liên khung (`temporal` True-P bị phạt **`+15.07%`** FRCNN / **`+12.63%`** YOLO), trong khi `spatial_qp` giữ vững mức tiết kiệm **`-11.94%`** (FRCNN) và **`-11.08%`** (YOLO) nhờ để bộ ước lượng chuyển động phân cấp nội tại của `libx265` xử lý chuyển động cục bộ trên nền đã làm sạch và gán trọng số `+ΔQP`.
 
 4. **Ưu thế Pareto trên phần cứng GPU Tesla T4 & Phát hiện gia tốc mã hóa `libx265` thực**:
@@ -89,101 +89,132 @@ Toàn bộ cài đặt toán học dưới đây khớp từng dòng lệnh vớ
 
 ### 3.1. Mã hóa Cơ sở Mức độ Nén $\phi(s)$ & Điều biến Tuyến tính FiLM
 
-Cho clip video đầu vào $I = \{I_t\}_{t=0}^{T-1} \in [0, 1]^{B \times T \times 3 \times H \times W}$ ($T = 4, H = W = 512$), chỉ số họ bộ mã hóa $f \in \{0, 1, 2, 3\}$ ($f = 0$ tương ứng `libx265` HEVC) và mức độ khắc nghiệt nén chuẩn hóa $s \in [0, 1]$ ánh xạ tuyến tính với dải lượng tử hóa $\text{CRF} = 22 + 25s \in [22, 47]$:
+Cho clip video đầu vào $I = \{I _ t\} _ {t=0}^{T-1} \in [0, 1]^{B \times T \times 3 \times H \times W}$ ($T = 4, H = W = 512$), chỉ số họ bộ mã hóa $f \in \{0, 1, 2, 3\}$ ($f = 0$ tương ứng `libx265` HEVC) và mức độ khắc nghiệt nén chuẩn hóa $s \in [0, 1]$ ánh xạ tuyến tính với dải lượng tử hóa $\text{CRF} = 22 + 25s \in [22, 47]$:
 
-$$s = \frac{\text{CRF} - 22}{25}, \qquad \phi(s) = \Big[ s,\; s^2,\; s^3,\; h_{0.50}(s),\; h_{0.75}(s),\; h_{0.90}(s) \Big]^\top \in \mathbb{R}^6$$
+$$
+s = \frac{\text{CRF} - 22}{25}, \qquad \phi(s) = \Big[ s,\; s^2,\; s^3,\; h_{0.50}(s),\; h_{0.75}(s),\; h_{0.90}(s) \Big]^\top \in \mathbb{R}^6
+$$
 
-trong đó các hàm bản lề từng khúc $h_\tau(s) = \text{clamp}\!\left(\frac{s - \tau}{1 - \tau}, 0, 1\right)$ tăng độ phân giải điều khiển ở vùng nén gắt ($\text{CRF} \ge 34.5$). Vector nhúng họ codec $\mathbf{e}_f \in \mathbb{R}^8$ được ghép với $\phi(s)$ và chiếu qua MLP hai tầng GELU để sinh vector điều kiện $\mathbf{c} \in \mathbb{R}^{64}$ (`SeverityConditioner`).
+trong đó các hàm bản lề từng khúc $h _ \tau(s) = \text{clamp}\!\left(\frac{s - \tau}{1 - \tau}, 0, 1\right)$ tăng độ phân giải điều khiển ở vùng nén gắt ($\text{CRF} \ge 34.5$). Vector nhúng họ codec $\mathbf{e} _ f \in \mathbb{R}^8$ được ghép với $\phi(s)$ và chiếu qua MLP hai tầng GELU để sinh vector điều kiện $\mathbf{c} \in \mathbb{R}^{64}$ (`SeverityConditioner`).
 
 Mỗi khối tích chập điều kiện `FiLMConvBlock` biến đổi đặc trưng $\mathbf{x}$ bằng hai lớp `Conv2d(3×3)` (bỏ `GroupNorm` ở độ phân giải đầy đủ $H\times W$ tại `enc1`/`dec1` để tránh nghẽn băng thông bộ nhớ, giữ `GroupNorm` 8 nhóm tại $H/2, H/4, H/8$) và điều biến kênh:
 
-$$\text{FiLM}(\mathbf{h}, \mathbf{c}) = \text{GELU}\Big( \mathbf{h} \odot \big(1 + \gamma(\mathbf{c})\big) + \beta(\mathbf{c}) \Big), \qquad [\gamma(\mathbf{c});\, \beta(\mathbf{c})] = \mathbf{W}_{\text{FiLM}} \mathbf{c} + \mathbf{b}_{\text{FiLM}}$$
+$$
+\text{FiLM}(\mathbf{h}, \mathbf{c}) = \text{GELU}\Big( \mathbf{h} \odot \big(1 + \gamma(\mathbf{c})\big) + \beta(\mathbf{c}) \Big), \qquad [\gamma(\mathbf{c});\, \beta(\mathbf{c})] = \mathbf{W}_{\text{FiLM}} \mathbf{c} + \mathbf{b}_{\text{FiLM}}
+$$
 
 ### 3.2. Khung xương U-Net Đa tỷ lệ Kết hợp Nhánh Ngữ cảnh Toàn cục $H/8$
 
-Đầu vào mỗi bước $t$ gồm 6 kênh $\mathbf{x}_{\text{in},t} = [I_t;\; \Delta I_{\text{MC},t}] \in \mathbb{R}^{B \times 6 \times H \times W}$ (trong các biến thể không gian `spatial` và `spatial_qp` với `disable_temporal=True`, $\Delta I_{\text{MC},t} \equiv \mathbf{0}$ đảm bảo tính độc lập khung hình tuyệt đối và giữ nguyên số lượng tham số khởi tạo `6,107,226` để so sánh nhân tố $2\times 2$ công bằng):
+Đầu vào mỗi bước $t$ gồm 6 kênh $\mathbf{x} _ {\text{in},t} = [I _ t;\; \Delta I _ {\text{MC},t}] \in \mathbb{R}^{B \times 6 \times H \times W}$ (trong các biến thể không gian `spatial` và `spatial_qp` với `disable_temporal=True`, $\Delta I _ {\text{MC},t} \equiv \mathbf{0}$ đảm bảo tính độc lập khung hình tuyệt đối và giữ nguyên số lượng tham số khởi tạo `6,107,226` để so sánh nhân tố $2\times 2$ công bằng):
 
 1. **Encoder đa tỷ lệ** ($C = 48$):
-   - $\mathbf{f}_1 = \text{Enc}_1(\mathbf{x}_{\text{in},t}, \mathbf{c}) \in \mathbb{R}^{B \times 48 \times H \times W}$
-   - $\mathbf{f}_2 = \text{Enc}_2(\text{Down}_1(\mathbf{f}_1), \mathbf{c}) \in \mathbb{R}^{B \times 96 \times \frac{H}{2} \times \frac{W}{2}}$
-   - $\mathbf{f}_3 = \text{Bottleneck}(\text{Down}_2(\mathbf{f}_2), \mathbf{c}) \in \mathbb{R}^{B \times 192 \times \frac{H}{4} \times \frac{W}{4}}$
+   - $\mathbf{f} _ 1 = \text{Enc} _ 1(\mathbf{x} _ {\text{in},t}, \mathbf{c}) \in \mathbb{R}^{B \times 48 \times H \times W}$
+   - $\mathbf{f} _ 2 = \text{Enc} _ 2(\text{Down} _ 1(\mathbf{f} _ 1), \mathbf{c}) \in \mathbb{R}^{B \times 96 \times \frac{H}{2} \times \frac{W}{2}}$
+   - $\mathbf{f} _ 3 = \text{Bottleneck}(\text{Down} _ 2(\mathbf{f} _ 2), \mathbf{c}) \in \mathbb{R}^{B \times 192 \times \frac{H}{4} \times \frac{W}{4}}$
 2. **Nhánh ngữ cảnh $H/8$ (`enc3` + `ctx_fuse`)**: Mở rộng vùng cảm nhận lên $H/8 \times W/8$ ($64\times 64$) để phân biệt chính xác người đi bộ với kết cấu mặt đường/cửa kính xe buýt trước khi hợp nhất trở lại $H/4$:
-   $$\mathbf{f}_4 = \text{Enc}_3(\text{Down}_3(\mathbf{f}_3), \mathbf{c}) \in \mathbb{R}^{B \times 192 \times \frac{H}{8} \times \frac{W}{8}}, \qquad \mathbf{f}_{3,\text{ctx}} = \text{CtxFuse}\Big([\mathbf{f}_3;\; \text{Interp}_{H/4}(\mathbf{f}_4)],\, \mathbf{c}\Big)$$
-3. **Trạng thái nút cổ chai & Decoder**: Ở chế độ không gian (`disable_temporal=True`), $\mathbf{h}_t = \text{ConvGRU}(\mathbf{f}_{3,\text{ctx}}, \mathbf{0})$ đóng vai trò một khối phi tuyến tĩnh trên từng khung độc lập, sau đó giải mã qua skip-connections `dec2` ($H/2$) và `dec1` ($H \times W$) để thu được đặc trưng độ phân giải gốc $\mathbf{u}_1 \in \mathbb{R}^{B \times 48 \times H \times W}$.
+
+$$
+\mathbf{f}_4 = \text{Enc}_3(\text{Down}_3(\mathbf{f}_3), \mathbf{c}) \in \mathbb{R}^{B \times 192 \times \frac{H}{8} \times \frac{W}{8}}, \qquad \mathbf{f}_{3,\text{ctx}} = \text{CtxFuse}\Big([\mathbf{f}_3;\; \text{Interp}_{H/4}(\mathbf{f}_4)],\, \mathbf{c}\Big)
+$$
+
+3. **Trạng thái nút cổ chai & Decoder**: Ở chế độ không gian (`disable_temporal=True`), $\mathbf{h} _ t = \text{ConvGRU}(\mathbf{f} _ {3,\text{ctx}}, \mathbf{0})$ đóng vai trò một khối phi tuyến tĩnh trên từng khung độc lập, sau đó giải mã qua skip-connections `dec2` ($H/2$) và `dec1` ($H \times W$) để thu được đặc trưng độ phân giải gốc $\mathbf{u} _ 1 \in \mathbb{R}^{B \times 48 \times H \times W}$.
 
 ### 3.3. Bão hòa Tiền cảnh Smoothstep STE & Làm phẳng Nền Đa tỷ lệ theo Mức nén
 
-Từ đặc trưng $\mathbf{u}_1$, mạng dự đoán logits chú ý ngữ nghĩa $z_t = \text{Conv}_{3\times 3}(\mathbf{u}_1) + b_{\text{cond}}(\mathbf{c})$ và xác suất chú ý thô $A_t = \sigma(z_t) \in (0, 1)^{B \times 1 \times H \times W}$.
+Từ đặc trưng $\mathbf{u} _ 1$, mạng dự đoán logits chú ý ngữ nghĩa $z _ t = \text{Conv} _ {3\times 3}(\mathbf{u} _ 1) + b _ {\text{cond}}(\mathbf{c})$ và xác suất chú ý thô $A _ t = \sigma(z _ t) \in (0, 1)^{B \times 1 \times H \times W}$.
 
-Để khắc phục triệt để hiện tượng **rò rỉ làm mờ nền vào bên trong đối tượng** của phép trộn tuyến tính trực tiếp (khi $A_t \approx 0.6$, đối tượng vẫn bị pha 40% ảnh mờ), chúng tôi thiết kế toán tử **Smoothstep Straight-Through Estimator (`eff_attn_t`)**:
+Để khắc phục triệt để hiện tượng **rò rỉ làm mờ nền vào bên trong đối tượng** của phép trộn tuyến tính trực tiếp (khi $A _ t \approx 0.6$, đối tượng vẫn bị pha 40% ảnh mờ), chúng tôi thiết kế toán tử **Smoothstep Straight-Through Estimator (`eff_attn_t`)**:
 
-$$u_{\text{sat}} = \text{clamp}\!\left(\frac{A_t - 0.12}{0.46},\, 0,\, 1\right), \qquad \tilde{A}_{\text{hard},t} = u_{\text{sat}}^2 (3 - 2 u_{\text{sat}}), \qquad \tilde{A}_{\text{proxy},t} = \sigma\big(2(z_t + 0.65)\big)$$
+$$
+u_{\text{sat}} = \text{clamp}\!\left(\frac{A_t - 0.12}{0.46},\, 0,\, 1\right), \qquad \tilde{A}_{\text{hard},t} = u_{\text{sat}}^2 (3 - 2 u_{\text{sat}}), \qquad \tilde{A}_{\text{proxy},t} = \sigma\big(2(z_t + 0.65)\big)
+$$
 
-$$\tilde{A}_t = \tilde{A}_{\text{proxy},t} + \text{sg}\big(\tilde{A}_{\text{hard},t} - \tilde{A}_{\text{proxy},t}\big)$$
+$$
+\tilde{A}_t = \tilde{A}_{\text{proxy},t} + \text{sg}\big(\tilde{A}_{\text{hard},t} - \tilde{A}_{\text{proxy},t}\big)
+$$
 
 trong đó $\text{sg}(\cdot)$ là toán tử ngắt gradient (`detach()`). Ở lượt truyền tiến:
-- Mọi pixel nền sâu có $A_t \le 0.12$ bị khóa cứng về $\tilde{A}_t = 0$ (100% làm phẳng nền, không lọt nhiễu sắc nét).
-- Mọi pixel tiền cảnh có $A_t \ge 0.58$ đạt bão hòa tuyệt đối $\tilde{A}_t = 1$ (0% pha trộn làm mờ Gaussian!).
-- Ở lượt truyền ngược, gradient đi trơn tru qua $\tilde{A}_{\text{proxy},t}$ mà không bị triệt tiêu đạo hàm ở hai vùng bão hòa.
+- Mọi pixel nền sâu có $A _ t \le 0.12$ bị khóa cứng về $\tilde{A} _ t = 0$ (100% làm phẳng nền, không lọt nhiễu sắc nét).
+- Mọi pixel tiền cảnh có $A _ t \ge 0.58$ đạt bão hòa tuyệt đối $\tilde{A} _ t = 1$ (0% pha trộn làm mờ Gaussian!).
+- Ở lượt truyền ngược, gradient đi trơn tru qua $\tilde{A} _ {\text{proxy},t}$ mà không bị triệt tiêu đạo hàm ở hai vùng bão hòa.
 
 Hai nhánh tiền cảnh và hậu cảnh được tổng hợp như sau:
-- **Nhánh bảo toàn đối tượng (Object-Preserving Branch)** với biên độ phần dư điều tiết theo độ nén $g(s) = 0.30 + 0.70\,\text{clamp}(s, 0, 1)$ và trần bảo vệ chặt $\Delta_{\max,\text{obj}} = 0.025$:
-  $$\Delta_{\text{obj},t} = \big(\Delta_{\max,\text{obj}} \cdot g(s)\big) \, \tilde{A}_t \odot \tanh\big(\text{Head}_{\text{obj}}(\mathbf{u}_1)\big), \qquad I_{\text{obj},t} = \text{clamp}(I_t + \Delta_{\text{obj},t},\, 0,\, 1)$$
-- **Nhánh đơn giản hóa nền đa tỷ lệ (Severity-Conditioned Multi-Scale Background Branch)** pha trộn thích nghi giữa bộ lọc Gaussian tách biến $5\times 5$ ($B_{\text{mild}} = G_{5\times 5}(I_t)$) và bộ lọc đa tỷ lệ tương đương vùng phủ $\sim 11\times 11$ ($B_{\text{strong}} = \text{Interp}_{H\times W}(G_{5\times 5}(\text{AvgPool}_{2\times 2}(B_{\text{mild}})))$) thông qua hệ số học được $\alpha_{\text{blur}}(\mathbf{c}) \in (0, 1)$:
-  $$B_t = \big(1 - \alpha_{\text{blur}}(\mathbf{c})\big) B_{\text{mild}} + \alpha_{\text{blur}}(\mathbf{c}) B_{\text{strong}}, \qquad I_{\text{bg},t} = \text{clamp}\Big(B_t + \Delta_{\max,\text{bg}}\tanh\big(\text{Head}_{\text{bg}}(\mathbf{u}_1)\big),\, 0,\, 1\Big)$$
-- **Khung hình tiền xử lý xuất sang bộ mã hóa chuẩn** ($\Delta_{\max,\text{bg}} = 0.03$):
-  $$\tilde{I}_t = \tilde{A}_t \odot I_{\text{obj},t} + (1 - \tilde{A}_t) \odot I_{\text{bg},t}$$
+- **Nhánh bảo toàn đối tượng (Object-Preserving Branch)** với biên độ phần dư điều tiết theo độ nén $g(s) = 0.30 + 0.70\,\text{clamp}(s, 0, 1)$ và trần bảo vệ chặt $\Delta _ {\max,\text{obj}} = 0.025$:
+
+$$
+\Delta_{\text{obj},t} = \big(\Delta_{\max,\text{obj}} \cdot g(s)\big) \, \tilde{A}_t \odot \tanh\big(\text{Head}_{\text{obj}}(\mathbf{u}_1)\big), \qquad I_{\text{obj},t} = \text{clamp}(I_t + \Delta_{\text{obj},t},\, 0,\, 1)
+$$
+
+- **Nhánh đơn giản hóa nền đa tỷ lệ (Severity-Conditioned Multi-Scale Background Branch)** pha trộn thích nghi giữa bộ lọc Gaussian tách biến $5\times 5$ $(B _ {\text{mild}} = G _ {5\times 5}(I _ t))$ và bộ lọc đa tỷ lệ tương đương vùng phủ $\sim 11\times 11$ $(B _ {\text{strong}} = \text{Interp} _ {H\times W}(G _ {5\times 5}(\text{AvgPool} _ {2\times 2}(B _ {\text{mild}}))))$ thông qua hệ số học được $\alpha _ {\text{blur}}(\mathbf{c}) \in (0, 1)$:
+
+$$
+B_t = \big(1 - \alpha_{\text{blur}}(\mathbf{c})\big) B_{\text{mild}} + \alpha_{\text{blur}}(\mathbf{c}) B_{\text{strong}}, \qquad I_{\text{bg},t} = \text{clamp}\Big(B_t + \Delta_{\max,\text{bg}}\tanh\big(\text{Head}_{\text{bg}}(\mathbf{u}_1)\big),\, 0,\, 1\Big)
+$$
+
+- **Khung hình tiền xử lý xuất sang bộ mã hóa chuẩn** ($\Delta _ {\max,\text{bg}} = 0.03$):
+
+$$
+\tilde{I}_t = \tilde{A}_t \odot I_{\text{obj},t} + (1 - \tilde{A}_t) \odot I_{\text{bg},t}
+$$
 
 ### 3.4. Phân bổ Lượng tử hóa Ngữ nghĩa QG Một phía (`+ΔQP`) & Giao tiếp Hợp chuẩn `libx265`
 
 Thay vì hạ QP ở tiền cảnh (dễ gây phình bit đột biến ở các cảnh đông người đi bộ), `TemporalSCOPE.compute_ctu_qp_offsets` thực hiện **phân bổ lượng tử hóa bất đối xứng một phía (one-sided background coarsening)**: giữ nguyên mức chất lượng cơ sở ($\Delta\text{QP} = 0$) trên toàn bộ ô chứa đối tượng và chỉ đẩy dương $+\Delta\text{QP}$ trên các ô nền thuần túy.
 
-Với kích thước nhóm lượng tử hóa $S_{\text{QG}} = 16$ (tạo lưới $32\times 32$ trên khung $512\times 512$), bản đồ chú ý bão hòa $\tilde{A}_t$ được gộp xuống cấp khối bằng tổ hợp nhạy tiền cảnh (nhằm bảo vệ cả những người đi bộ nhỏ chỉ chiếm một góc ô $16\times 16$):
+Với kích thước nhóm lượng tử hóa $S _ {\text{QG}} = 16$ (tạo lưới $32\times 32$ trên khung $512\times 512$), bản đồ chú ý bão hòa $\tilde{A} _ t$ được gộp xuống cấp khối bằng tổ hợp nhạy tiền cảnh (nhằm bảo vệ cả những người đi bộ nhỏ chỉ chiếm một góc ô $16\times 16$):
 
-$$\bar{A}_{\text{QG},t} = 0.62\,\text{AvgPool}_{16\times 16}(\tilde{A}_t) + 0.38\,\text{MaxPool}_{16\times 16}(\tilde{A}_t)$$
+$$
+\bar{A}_{\text{QG},t} = 0.62\,\text{AvgPool}_{16\times 16}(\tilde{A}_t) + 0.38\,\text{MaxPool}_{16\times 16}(\tilde{A}_t)
+$$
 
-Sử dụng ngưỡng xoay tuyệt đối $\tau = 0.38$ và thang điều biên $\Delta\text{QP}_{\max} = 4.0$ (cho biến thể `spatial_qp`, `temporal_qp`, `temporal_qp_proxy`; bằng `0.0` cho các biến thể không dùng QG):
+Sử dụng ngưỡng xoay tuyệt đối $\tau = 0.38$ và thang điều biên $\Delta\text{QP} _ {\max} = 4.0$ (cho biến thể `spatial_qp`, `temporal_qp`, `temporal_qp_proxy`; bằng `0.0` cho các biến thể không dùng QG):
 
-$$\Delta\text{QP}_{\text{frame},t} = \text{clamp}\!\left( \Delta\text{QP}_{\max} \cdot 1.75 \cdot \frac{\max(0,\, \tau - \bar{A}_{\text{QG},t})}{\tau},\; 0.0,\; 0.14 \times 51.0 \right) \in [0,\; +7.14]$$
+$$
+\Delta\text{QP}_{\text{frame},t} = \text{clamp}\!\left( \Delta\text{QP}_{\max} \cdot 1.75 \cdot \frac{\max(0,\, \tau - \bar{A}_{\text{QG},t})}{\tau},\; 0.0,\; 0.14 \times 51.0 \right) \in [0,\; +7.14]
+$$
 
 **Cầu nối hợp chuẩn sang `libx265` (`HybridX265STE._build_addroi_filter_from_offsets`)**:
-- Bản đồ $\Delta\text{QP}_t$ được nội suy về lưới macro-ROI $16\times 16$ ($32\times 32$ pixel/ô), chuyển sang hệ số `qoffset` chuẩn của FFmpeg (`qoffset = clamp(d_qp / 51.0, -0.18, +0.14)`), bỏ qua các ô nhiễu nhỏ $|\Delta\text{QP}| < 0.15$, và **gộp ngang tự động các ô liền kề có `|Δqoffset| ≤ 0.005`** để tối giản chuỗi lọc (trung bình chỉ còn **`74.74` hình chữ nhật ROI/khung** thay vì 256 ô rời rạc).
+- Bản đồ $\Delta\text{QP} _ t$ được nội suy về lưới macro-ROI $16\times 16$ ($32\times 32$ pixel/ô), chuyển sang hệ số `qoffset` chuẩn của FFmpeg (`qoffset = clamp(d_qp / 51.0, -0.18, +0.14)`), bỏ qua các ô nhiễu nhỏ $|\Delta\text{QP}| < 0.15$, và **gộp ngang tự động các ô liền kề có `|Δqoffset| ≤ 0.005`** để tối giản chuỗi lọc (trung bình chỉ còn **`74.74` hình chữ nhật ROI/khung** thay vì 256 ô rời rạc).
 - Với `spatial_qp`, chuỗi lọc động `split=T ... select='eq(n,t)',addroi=... concat=n=T` gắn metadata `AV_FRAME_DATA_REGIONS_OF_INTEREST` riêng biệt cho từng khung $t$, được `libx265` (với `aq-mode=2`) dịch trực tiếp thành mảng **`x265_picture.quantOffsets`** trước khi lượng tử hóa từng CTU/QG.
-- Với chế độ **`spatial_qp_gop_reuse`** (`reuse_iframe_qp=True`), bản đồ $\Delta\text{QP}_{t=0}$ của I-frame được giữ cố định cho cả 4 khung trong GOP, cho phép FFmpeg dùng một chuỗi `-vf addroi=...` phẳng duy nhất (bỏ hoàn toàn `split/select/concat`, giảm số nút lọc từ `298.96` xuống **`74.48` nút/clip**).
+- Với chế độ **`spatial_qp_gop_reuse`** (`reuse_iframe_qp=True`), bản đồ $\Delta\text{QP} _ {t=0}$ của I-frame được giữ cố định cho cả 4 khung trong GOP, cho phép FFmpeg dùng một chuỗi `-vf addroi=...` phẳng duy nhất (bỏ hoàn toàn `split/select/concat`, giảm số nút lọc từ `298.96` xuống **`74.48` nút/clip**).
 - **Tính tuân thủ tiêu chuẩn**: Trong chuẩn ISO/IEC 23008-2 (HEVC), mọi độ lệch $\Delta\text{QP}$ cấp QG được mã hóa hợp lệ ngay trong cú pháp chuẩn `cu_qp_delta_abs` / `cu_qp_delta_sign_flag` của từng Coding Unit. Do đó, luồng `.mp4` đầu ra **không chứa bất kỳ metadata riêng tư nào** và giải mã hoàn hảo trên mọi trình phát phần cứng/phần mềm tiêu chuẩn.
 
 ### 3.5. Gói Thời gian trong Thiết kế Nhân tố $2\times 2$ (`temporal`, `temporal_qp`, `temporal_qp_proxy`)
 
 Khi bật nhánh thời gian (`disable_temporal=False`), mô hình kích hoạt đồng bộ gói 4 cơ chế liên khung:
-1. **Ước lượng chuyển động toàn cục 6-DOF Cauchy-IRLS (`estimate_global_affine_irls`)**: Tìm kiếm dịch chuyển thô nguyên + dưới pixel tại $H/8$ ($r = 6$), sau đó tinh chỉnh ma trận affine $\theta_t \in \mathbb{R}^{2\times 3}$ qua 4 vòng lặp ở $H/8$ và 3 vòng lặp ở $H/4$ bằng hàm trọng số bền vững Cauchy $w_{\text{IRLS}} = \frac{\delta^2}{\delta^2 + e^2}$ ($\delta = 0.04$) giải hệ chính tắc $(J^\top W J + 10^{-2} I_6)\Delta p = J^\top W e$ trong FP32. Kèm theo cơ chế **khóa tĩnh (`corner_snap_px = 0.75` px)**: nếu chuyển dịch cực đại ở 4 góc ảnh nhỏ hơn `0.75` pixel, $\theta_t$ được gán cứng về ma trận đơn vị $I_{2\times 3}$ để tránh nhòe nội suy song tuyến trên camera tĩnh.
-2. **Hồi quy nút cổ chai bù chuyển động (`TemporalConvGRUCell`)**: Biến đổi trạng thái ẩn $\mathbf{h}_{t-1}$ đã warp theo $\theta_t$ tại độ phân giải $H/4 \times W/4$ ($192$ kênh).
-3. **Khóa nền EMA có cổng che khuất/thị sai**: Pha trộn nền không gian hiện tại với nền bước trước đã warp $I_{\text{bg},t-1}^{\text{warp}}$ thông qua trọng số tin cậy $w_{\text{temp}} = 0.85\,\sigma(\text{Gate}_{\text{bg}}(\mathbf{u}_1)) \cdot v_{\text{mask}} \cdot \exp(-60 m_t) \cdot \text{clamp}(1 - m_t/0.05, 0, 1)$.
+1. **Ước lượng chuyển động toàn cục 6-DOF Cauchy-IRLS (`estimate_global_affine_irls`)**: Tìm kiếm dịch chuyển thô nguyên + dưới pixel tại $H/8$ ($r = 6$), sau đó tinh chỉnh ma trận affine $\theta _ t \in \mathbb{R}^{2\times 3}$ qua 4 vòng lặp ở $H/8$ và 3 vòng lặp ở $H/4$ bằng hàm trọng số bền vững Cauchy $w _ {\text{IRLS}} = \frac{\delta^2}{\delta^2 + e^2}$ ($\delta = 0.04$) giải hệ chính tắc $(J^\top W J + 10^{-2} I _ 6)\Delta p = J^\top W e$ trong FP32. Kèm theo cơ chế **khóa tĩnh (`corner_snap_px = 0.75` px)**: nếu chuyển dịch cực đại ở 4 góc ảnh nhỏ hơn `0.75` pixel, $\theta _ t$ được gán cứng về ma trận đơn vị $I _ {2\times 3}$ để tránh nhòe nội suy song tuyến trên camera tĩnh.
+2. **Hồi quy nút cổ chai bù chuyển động (`TemporalConvGRUCell`)**: Biến đổi trạng thái ẩn $\mathbf{h} _ {t-1}$ đã warp theo $\theta _ t$ tại độ phân giải $H/4 \times W/4$ ($192$ kênh).
+3. **Khóa nền EMA có cổng che khuất/thị sai**: Pha trộn nền không gian hiện tại với nền bước trước đã warp $I _ {\text{bg},t-1}^{\text{warp}}$ thông qua trọng số tin cậy $w _ {\text{temp}} = 0.85\,\sigma(\text{Gate} _ {\text{bg}}(\mathbf{u} _ 1)) \cdot v _ {\text{mask}} \cdot \exp(-60 m _ t) \cdot \text{clamp}(1 - m _ t/0.05, 0, 1)$.
 4. **Truyền tiếp đơn điệu QG có rào chắn tiền cảnh**: Đảm bảo $\Delta\text{QP}$ vùng nền không sụt giảm ngẫu nhiên qua các P-frame nhưng lập tức hạ trọng số mang tiếp về $0$ (`fg_safe`) ngay khi phát hiện điểm chú ý tiền cảnh $\ge 0.24$.
 
 ### 3.6. Cầu nối Khả vi `HybridX265STE` & `DifferentiableVideoProxy`
 
 Do tiến trình nhị phân `ffmpeg`/`libx265` không khả vi, `HybridX265STE` đóng vòng lặp huấn luyện đầu-cuối bằng ước lượng truyền thẳng kép cho cả khung hình tái tạo lẫn tốc độ bit từng khung:
 
-$$\hat{I}_{\text{STE}} = \hat{I}_{\text{proxy}} + \text{sg}\big(\hat{I}_{\text{x265}} - \hat{I}_{\text{proxy}}\big), \qquad R_{\text{STE},t} = R_{\text{proxy},t} + \text{sg}\big(R_{\text{x265},t} - R_{\text{proxy},t}\big)$$
+$$
+\hat{I}_{\text{STE}} = \hat{I}_{\text{proxy}} + \text{sg}\big(\hat{I}_{\text{x265}} - \hat{I}_{\text{proxy}}\big), \qquad R_{\text{STE},t} = R_{\text{proxy},t} + \text{sg}\big(R_{\text{x265},t} - R_{\text{proxy},t}\big)
+$$
 
 Bộ đại diện khả vi `DifferentiableVideoProxy` mô phỏng sát vật lý HEVC bằng:
-- Biến đổi trực chuẩn **2D DCT-II khối $8\times 8$** với ma trận trọng số tần số $W_{\text{freq}}(u, v) = 1 + 0.25(u + v)$ và bước lượng tử hóa địa phương $Q_{\text{step}}(x, y) = 0.008 \times 2^{(\text{QP}_{\text{base}} + \Delta\text{QP}_{8\times 8}(x,y) - 22)/6}$ (nhân hệ số `1.15` cho phần dư liên khung P-frame).
-- **Tách biệt tường minh mã hóa Intra ($t=0$) và dự đoán bù chuyển động Inter ($t > 0$)**: Tại $t > 0$, khung tham chiếu là khung **đã giải mã trước đó** $\hat{I}_{t-1}$ được bù chuyển động tìm kiếm thô–tinh khối $16\times 16$ (`estimate_motion_compensated_pred`), chỉ lượng tử hóa phần dư $r_t = \tilde{I}_t - \mathcal{W}(\hat{I}_{t-1})$.
-- **Ước lượng tốc độ bit cổng $C^\infty$ deadzone/SKIP**: Sử dụng hàm trơn $g(m) = \sigma((m - 0.65)/0.22)\log_2(1 + m)$ với $m = \sqrt{(\text{coeff}/Q_{\text{eff}})^2 + 10^{-6}}$, hiệu chuẩn hệ số suy giảm mũ riêng cho I-frame và P-frame khớp với đường cong thực nghiệm của `libx265`.
+- Biến đổi trực chuẩn **2D DCT-II khối $8\times 8$** với ma trận trọng số tần số $W _ {\text{freq}}(u, v) = 1 + 0.25(u + v)$ và bước lượng tử hóa địa phương $Q _ {\text{step}}(x, y) = 0.008 \times 2^{(\text{QP} _ {\text{base}} + \Delta\text{QP} _ {8\times 8}(x,y) - 22)/6}$ (nhân hệ số `1.15` cho phần dư liên khung P-frame).
+- **Tách biệt tường minh mã hóa Intra ($t=0$) và dự đoán bù chuyển động Inter ($t > 0$)**: Tại $t > 0$, khung tham chiếu là khung **đã giải mã trước đó** $\hat{I} _ {t-1}$ được bù chuyển động tìm kiếm thô–tinh khối $16\times 16$ (`estimate_motion_compensated_pred`), chỉ lượng tử hóa phần dư $r _ t = \tilde{I} _ t - \mathcal{W}(\hat{I} _ {t-1})$.
+- **Ước lượng tốc độ bit cổng $C^\infty$ deadzone/SKIP**: Sử dụng hàm trơn $g(m) = \sigma((m - 0.65)/0.22)\log _ 2(1 + m)$ với $m = \sqrt{(\text{coeff}/Q _ {\text{eff}})^2 + 10^{-6}}$, hiệu chuẩn hệ số suy giảm mũ riêng cho I-frame và P-frame khớp với đường cong thực nghiệm của `libx265`.
 
 ### 3.7. Hàm Mục tiêu Huấn luyện Tổng hợp (`VCMTemporalPreEditLoss`)
 
 Toàn bộ phép tính mất mát được ép kiểu sang `float32` bên ngoài `autocast` để ngăn tràn số FP16 khi lấy tổng trên $512\times 512$ pixel:
 
-$$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{task}} + \mathcal{L}_{\text{att}} + \mathcal{L}_{\text{bg}} + \mathcal{L}_{\text{temp}} + \mathcal{L}_{\text{reg}}$$
+$$
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{task}} + \mathcal{L}_{\text{att}} + \mathcal{L}_{\text{bg}} + \mathcal{L}_{\text{temp}} + \mathcal{L}_{\text{reg}}
+$$
 
 | Nhóm Mất mát | Công thức Thành phần Chính | Hệ số Trọng số Chính xác (`v3`) |
 |---|---|---|
-| **1. Bảo toàn Đặc trưng & Tiền cảnh ($\mathcal{L}_{\text{task}}$)** | Smooth-$L_1$ ($\beta=0.1$) chuẩn hóa theo RMS trên 4 tầng FPN $\{P_2, P_3, P_4, P_5\}$ của giáo viên đóng băng **Faster R-CNN R50-FPN v2** trong mặt nạ mở rộng $M_{\text{det}}$, cộng bảo toàn trực tiếp pixel ($L_1 + 10\,\text{MSE}$), gradient cạnh $L_1$ và RMSE sau giải mã trên vùng đối tượng. | $\lambda_{\text{det}} = 5.0$, $\lambda_{\text{fg\_pix}} = 4.0$, $\lambda_{\text{fg\_grad}} = 2.0$, $\lambda_{\text{fg\_recon}} = 1.5$ |
-| **2. Giám sát Chú ý Độ nhạy Cao ($\mathcal{L}_{\text{att}}$)** | BCE có trọng số + **Tversky Loss bất đối xứng** ($\alpha=0.25, \beta=0.75$ ưu tiên recall để không bỏ sót người đi bộ nhỏ) trên mặt nạ giãn 4-pixel $M_{\text{halo}}$, cộng bản lề bão hòa tiền cảnh ($\max(0, 0.95 - A_t)$ trên $M_{\text{det}}$) và phạt thưa vùng nền ngoài $M_{\text{halo}}$. | $\lambda_{\text{attn}} = 0.45$, $\lambda_{\text{fg\_sat}} = 2.0$, $\lambda_{\text{attn\_sparse}} = 1.4$ |
-| **3. Làm phẳng Nền & Tốc độ Bit I/P ($\mathcal{L}_{\text{bg}}$)** | Độ lệch phẳng so với ảnh mờ $5\times 5$ trên $M_{\text{bg}} = 1 - M_{\text{det}}$, đạo hàm không gian $L_1$ vùng nền, và hàm phạt tốc độ bit tách riêng I-frame / P-frame kèm thành phần logarit nhạy vùng bitrate thấp $\log(1 + R_P / 0.05)$. | $\lambda_{\text{bg\_flat}} = 1.2$, $\lambda_{\text{bg\_smooth}} = 0.8$, $\lambda_{\text{rate\_i}} = 1.0$, $\lambda_{\text{rate\_p}} = 4.0$, $\lambda_{\text{rate\_p\_log}} = 0.45$ |
-| **4. Nhất quán Thời gian & Đơn điệu QG ($\mathcal{L}_{\text{temp}}$)** | Sai khác liên khung vùng nền có trọng số che khuất $e^{-5\lVert I_t - I_{t-1}^{\text{warp}}\rVert_1}$, độ trơn thời gian của $\Delta_{\text{obj}}$, và phạt đơn điệu/làm trơn $\Delta\text{QP}$ vùng nền. **Quan trọng**: Trong `scripts/run_v3.py`, mọi biến thể không gian (`spatial`, `spatial_qp`, `scope_paper_adapted`) đều khóa cứng toàn bộ hệ số nhóm này về **`0.0`** để loại bỏ nhiễu phạt chéo. | Nhánh `temporal*`: $\lambda_{\text{temp\_bg}} = 1.0$, $\lambda_{\text{temp\_obj}} = 0.5$, $\lambda_{\text{dqp\_mono}} = 0.4$, $\lambda_{\text{dqp\_smooth}} = 0.15$.<br>Nhánh `spatial*`: **tất cả $= 0.0$**. |
-| **5. Điều chuẩn Phần dư & Bảo vệ QG ($\mathcal{L}_{\text{reg}}$)** | Chuẩn $L_1$ và Total Variation (TV) trên $\Delta_{\text{obj}}, \Delta_{\text{bg}}$, cộng rào chắn phạt mọi giá trị $\Delta\text{QP} > 0$ lọt vào ô QG chứa đối tượng (`fg_qg * relu(ctu_qp_offsets)`). | $\lambda_{\text{res\_l1}} = 0.1$, $\lambda_{\text{res\_tv}} = 0.1$, $\lambda_{\text{dqp\_fg}} = 0.5$ |
+| **1. Bảo toàn Đặc trưng & Tiền cảnh ($\mathcal{L} _ {\text{task}}$)** | Smooth $L _ 1$ ($\beta=0.1$) chuẩn hóa theo RMS trên 4 tầng FPN $\{P _ 2, P _ 3, P _ 4, P _ 5\}$ của giáo viên đóng băng **Faster R-CNN R50-FPN v2** trong mặt nạ mở rộng $M _ {\text{det}}$, cộng bảo toàn trực tiếp pixel ($L _ 1 + 10\,\text{MSE}$), gradient cạnh $L _ 1$ và RMSE sau giải mã trên vùng đối tượng. | $\lambda _ {\text{det}} = 5.0$, $\lambda _ {\text{fg-pix}} = 4.0$, $\lambda _ {\text{fg-grad}} = 2.0$, $\lambda _ {\text{fg-recon}} = 1.5$ |
+| **2. Giám sát Chú ý Độ nhạy Cao ($\mathcal{L} _ {\text{att}}$)** | BCE có trọng số + **Tversky Loss bất đối xứng** ($\alpha=0.25, \beta=0.75$ ưu tiên recall để không bỏ sót người đi bộ nhỏ) trên mặt nạ giãn 4-pixel $M _ {\text{halo}}$, cộng bản lề bão hòa tiền cảnh ($\max(0, 0.95 - A _ t)$ trên $M _ {\text{det}}$) và phạt thưa vùng nền ngoài $M _ {\text{halo}}$. | $\lambda _ {\text{attn}} = 0.45$, $\lambda _ {\text{fg-sat}} = 2.0$, $\lambda _ {\text{attn-sparse}} = 1.4$ |
+| **3. Làm phẳng Nền & Tốc độ Bit I/P ($\mathcal{L} _ {\text{bg}}$)** | Độ lệch phẳng so với ảnh mờ $5\times 5$ trên $M _ {\text{bg}} = 1 - M _ {\text{det}}$, đạo hàm không gian $L _ 1$ vùng nền, và hàm phạt tốc độ bit tách riêng I-frame / P-frame kèm thành phần logarit nhạy vùng bitrate thấp $\log(1 + R _ P / 0.05)$. | $\lambda _ {\text{bg-flat}} = 1.2$, $\lambda _ {\text{bg-smooth}} = 0.8$, $\lambda _ {\text{rate-i}} = 1.0$, $\lambda _ {\text{rate-p}} = 4.0$, $\lambda _ {\text{rate-p-log}} = 0.45$ |
+| **4. Nhất quán Thời gian & Đơn điệu QG ($\mathcal{L} _ {\text{temp}}$)** | Sai khác liên khung vùng nền có trọng số che khuất $e^{-5\lVert I _ t - I _ {t-1}^{\text{warp}}\rVert _ 1}$, độ trơn thời gian của $\Delta _ {\text{obj}}$, và phạt đơn điệu/làm trơn $\Delta\text{QP}$ vùng nền. **Quan trọng**: Trong `scripts/run_v3.py`, mọi biến thể không gian (`spatial`, `spatial_qp`, `scope_paper_adapted`) đều khóa cứng toàn bộ hệ số nhóm này về **`0.0`** để loại bỏ nhiễu phạt chéo. | Nhánh `temporal*`: $\lambda _ {\text{temp-bg}} = 1.0$, $\lambda _ {\text{temp-obj}} = 0.5$, $\lambda _ {\text{dqp-mono}} = 0.4$, $\lambda _ {\text{dqp-smooth}} = 0.15$.<br>Nhánh `spatial*`: **tất cả $= 0.0$**. |
+| **5. Điều chuẩn Phần dư & Bảo vệ QG ($\mathcal{L} _ {\text{reg}}$)** | Chuẩn $L _ 1$ và Total Variation (TV) trên $\Delta _ {\text{obj}}, \Delta _ {\text{bg}}$, cộng rào chắn phạt mọi giá trị $\Delta\text{QP} > 0$ lọt vào ô QG chứa đối tượng (`fg_qg * relu(ctu_qp_offsets)`). | $\lambda _ {\text{res-l1}} = 0.1$, $\lambda _ {\text{res-tv}} = 0.1$, $\lambda _ {\text{dqp-fg}} = 0.5$ |
 
 ---
 
@@ -197,10 +228,14 @@ Mọi thông số giao thức được khóa cứng bằng mã kiểm tra tự �
   - **Tập kiểm định độc lập (`Held-Out Test`)**: **`1,648` khung hình vật lý** = **`412` clip 4 khung không chồng lấp**, gồm toàn bộ `MOT17-11` (`000001..000900` = `900` khung, `225` clip, `9,436` hộp GT hoạt động) và `MOT17-13` (`000001..000748` = `748` khung, `187` clip, `11,630` hộp GT hoạt động; loại trừ tường minh 2 khung lẻ cuối `000749, 000750` để bảo toàn đúng cấu trúc GOP 4 khung). Tổng cộng có **`21,066` hộp giới hạn người đi bộ GT hoạt động** (`5,274` trên I-frame và `15,792` trên P-frame).
 - **Siêu tham số huấn luyện đồng nhất cho cả 18 job**: Độ phân giải `512×512` (bilinear square resize), `clip_len=4`, `batch_size=2`, `grad_accum_steps=2` (batch logic = 4 clip = 16 khung/cập nhật), trình tối ưu `AdamW(lr=1.5e-4, weight_decay=1e-4)`, lịch trình 2 epoch khởi động tuyến tính + 18 epoch giảm cosine về `1e-6`, tối đa `36` epoch, dừng sớm với `min_epochs=12`, `patience=10`, `min_delta=0.0005`, chuẩn cắt gradient `float64` `max_norm=1.0` an toàn với `GradScaler` FP16.
 - **Cấu hình bộ mã hóa đánh giá thực (`libx265`)**: `preset=medium`, cấu trúc độ trễ thấp `IPPP` (`bframes=0:keyint=4:min-keyint=4:scenecut=0:aq-mode=2`), quét qua 4 mức `CRF ∈ {22, 27, 32, 37}` ở `25 fps`. Bitrate được đo bằng tổng kích thước byte thực của các gói video (`pkt_size` từ `ffprobe`), loại bỏ hoàn toàn phần đầu container MP4 và global headers:
-  $$\text{bpp} = \frac{8 \times \sum_{i=1}^{N} \text{pkt\_bytes}_i}{N \times 512 \times 512}$$
+
+$$
+\text{bpp} = \frac{8 \times \sum_{i=1}^{N} \text{pkt-bytes}_i}{N \times 512 \times 512}
+$$
+
 - **Chính sách tính AP & BD-Rate**:
   - Tính **101-point interpolated Pedestrian AP** (`AP50` và `AP50:95` qua 10 ngưỡng $\text{IoU} \in \{0.50, 0.55, \dots, 0.95\}$, ngưỡng điểm tin cậy `score_threshold = 0.01`) gộp trên toàn bộ `1,648` khung của tập Test (hoặc tập con lát cắt/chuỗi tương ứng). Các dự đoán không khớp GT nhưng chồng lấp với hộp `ignore` (đám đông, người ngồi, phản chiếu gương, che khuất nặng theo chuẩn chú thích MOT17) lớn hơn ngưỡng IoU đánh giá sẽ bị triệt tiêu để không phạt oan dương tính giả (lưu ý: chính sách này không đồng nhất hoàn toàn với `pycocotools` COCO 80 lớp tiêu chuẩn và được công bố tường minh trong `METRIC_POLICY`).
-  - **BD-rate chính thức**: Nội suy **PCHIP** (`scipy.interpolate.PchipInterpolator`) của $\ln(\text{bpp})$ theo $\text{AP}$ chỉ trên miền giao độ chính xác thực tế $[A_{\min}, A_{\max}]$ của từng seed, không bao giờ ngoại suy hoặc tự ý sửa các đường cong không đơn điệu. Nội suy **Cubic** được báo cáo song song để kiểm tra độ nhạy.
+  - **BD-rate chính thức**: Nội suy **PCHIP** (`scipy.interpolate.PchipInterpolator`) của $\ln(\text{bpp})$ theo $\text{AP}$ chỉ trên miền giao độ chính xác thực tế $[A _ {\min}, A _ {\max}]$ của từng seed, không bao giờ ngoại suy hoặc tự ý sửa các đường cong không đơn điệu. Nội suy **Cubic** được báo cáo song song để kiểm tra độ nhạy.
 
 ### Bảng Định nghĩa Ma trận 6 Biến thể Thực nghiệm (`scripts/v3_protocol.py`)
 
@@ -454,7 +489,7 @@ Sử dụng kịch bản [`scripts/eval_unseen_detectors.py`](scripts/eval_unsee
 
 1. **Tính phổ quát xuyên kiến trúc (`6/6` họ mô hình)**: Không cần bất kỳ bước tinh chỉnh nào, `spatial_qp` đứng đầu về trung bình Tổng `AP50:95` BD-rate trên mọi họ phát hiện đối tượng hiện đại — bao gồm CNN hai giai đoạn đề xuất vùng (`Faster R-CNN`: `-14.88%`), CNN một giai đoạn neo dày Focal Loss (`RetinaNet v2`: `-13.46%` `AP50:95`, **`-23.37%`** `AP50`), CNN một giai đoạn dự đoán tâm không neo (`FCOS`: `-13.23%`), CSPDarknet tách đầu dự đoán (`YOLOv8s`: `-11.78%`), kiến trúc truy vấn lai **Vision-Transformer DETR** có độ chính xác gốc cao nhất (`RT-DETR-L`, `36.75%` AP50:95 tại CRF 22: tiết kiệm **`-11.33%`** PCHIP / **`-15.87%`** Cubic), và mạng tích chập tách chiều sâu siêu nhẹ cho thiết bị biên (`SSDLite320`: `-13.02%`).
 2. **Giá trị gia tăng nhất quán của phân bổ lượng tử hóa `quantOffsets` (`spatial → spatial_qp`)**: Khi giữ nguyên kiến trúc mạng không gian và bổ sung điều khiển QG `+ΔQP` một phía, tốc độ bit tiếp tục giảm thêm trên tất cả 5 detector độ phân giải đầy đủ (`-4.02%` RetinaNet v2, `-3.94%` RT-DETR-L, `-3.84%` Faster R-CNN, `-3.26%` FCOS, `-1.47%` YOLOv8s), khẳng định việc kết hợp tiền xử lý pixel với bảng lượng tử hóa chuẩn của `libx265` mang lại lợi ích nội tại cho tín hiệu video thay vì khai thác lỗ hổng của riêng một backbone.
-3. **Tại sao `spatial_qp` căn chỉnh pixel chuyển giao vượt trội so với `temporal_qp` hồi quy affine**: Chuyển từ `spatial_qp` sang `temporal_qp` làm phình tốc độ bit `AP50:95` trên cả 6 detector, đặc biệt nặng trên `RetinaNet v2` (`+14.15%`), `FCOS` (`+10.76%`) và `SSDLite320` (`+22.63%`) dù `temporal_qp` vẫn đạt `-16.10%` và `-13.54%` ở ngưỡng lỏng `AP50`. Khoảng cách lớn giữa `AP50` và `AP50:95` của `temporal_qp` chứng minh rằng phép warp toàn cục 6-DOF gây sai lệch vị trí biên hộp ở các ngưỡng IoU khắt khe (`0.75–0.95`) đối với các đầu hồi quy tâm/lưới dày. Ngoài ra, trên `SSDLite320`, bước thu nhỏ nội bộ về `320×320` nén biên độ `AP50:95` gốc của `anchor_x265` qua 4 mức `CRF 22..37` xuống chỉ còn `2.00` điểm phần trăm (`14.686% → 12.689%`), làm khuếch đại tự nhiên độ lệch chuẩn ngang theo trục bit (`±18.86%`). Toán tử **Smoothstep STE ($\tilde{A}_t = 1$ trên tiền cảnh) của `spatial_qp`** giữ nguyên tọa độ biên sắc nét trên lưới pixel gốc $512\times 512$, đảm bảo độ chính xác định vị IoU cao trên mọi kiến trúc.
+3. **Tại sao `spatial_qp` căn chỉnh pixel chuyển giao vượt trội so với `temporal_qp` hồi quy affine**: Chuyển từ `spatial_qp` sang `temporal_qp` làm phình tốc độ bit `AP50:95` trên cả 6 detector, đặc biệt nặng trên `RetinaNet v2` (`+14.15%`), `FCOS` (`+10.76%`) và `SSDLite320` (`+22.63%`) dù `temporal_qp` vẫn đạt `-16.10%` và `-13.54%` ở ngưỡng lỏng `AP50`. Khoảng cách lớn giữa `AP50` và `AP50:95` của `temporal_qp` chứng minh rằng phép warp toàn cục 6-DOF gây sai lệch vị trí biên hộp ở các ngưỡng IoU khắt khe (`0.75–0.95`) đối với các đầu hồi quy tâm/lưới dày. Ngoài ra, trên `SSDLite320`, bước thu nhỏ nội bộ về `320×320` nén biên độ `AP50:95` gốc của `anchor_x265` qua 4 mức `CRF 22..37` xuống chỉ còn `2.00` điểm phần trăm (`14.686% → 12.689%`), làm khuếch đại tự nhiên độ lệch chuẩn ngang theo trục bit (`±18.86%`). Toán tử **Smoothstep STE ($\tilde{A} _ t = 1$ trên tiền cảnh) của `spatial_qp`** giữ nguyên tọa độ biên sắc nét trên lưới pixel gốc $512\times 512$, đảm bảo độ chính xác định vị IoU cao trên mọi kiến trúc.
 
 ---
 

@@ -1,12 +1,12 @@
 # V3 validation
 
-Environment: Windows, Python3.11.14, torch2.5.1, torchvision0.20.1, NumPy2.4.6,
-SciPy1.17.1, Pillow11.1.0. CUDA was unavailable locally.
+Environment: Windows, Python 3.11.14, torch 2.5.1, torchvision 0.20.1, NumPy 2.4.6,
+SciPy 1.17.1, Pillow 11.1.0. CUDA was unavailable locally.
 
-Command: `python -B -m pytest -q -p no:cacheprovider` with OMP/MKL threads2.
+Command: `python -B -m pytest -q -p no:cacheprovider` with OMP/MKL threads 2.
 Result: **145 passed, 2 skipped, 288 subtests passed**. Skips: real FFmpeg codec
 integration (tools absent from local PATH) and the optional cached-pretrained
-detector test. All source files compile on Python3.11; `git diff --check` passes.
+detector test. All source files compile on Python 3.11; `git diff --check` passes.
 The publication file set was compared against every actual pool credential; no
 credential was present. Pool and runtime directories are excluded from git.
 
@@ -35,22 +35,22 @@ GitHub Actions also verified commit `a0de10d4fc5ac2c6117177b56e38696398acb819`
 on Linux with real FFmpeg/x265: **142 passed, 1 skipped, 279 subtests passed**.
 Run: https://github.com/munnn01/t_scope_v3/actions/runs/43732326300.
 
-The first Kaggle launch exposed SDK2.2.5 wrapping a nonexistent-kernel HTTP403
+The first Kaggle launch exposed SDK 2.2.5 wrapping a nonexistent-kernel HTTP 403
 as ValueError. The launcher now independently enumerates every page of verified
 owned kernels before treating that ambiguous response as absence. Existing
-kernels, HTTP401, unknown ownership and incomplete listings still block upload.
+kernels, HTTP 401, unknown ownership and incomplete listings still block upload.
 Four additional regression tests cover this production behavior.
 
-Kaggle's owned-kernel listing also returned redacted sentinel records with id0,
+Kaggle's owned-kernel listing also returned redacted sentinel records with id 0,
 empty ref/author/slug and exact title `[Private Notebook]`. The launcher now skips
 only that exact service placeholder while still traversing all pages and rejecting
-other malformed entries. The final focused launcher suite has24 passing tests
-and25 passing subtests; an existing target on a later page still prevents upload.
+other malformed entries. The final focused launcher suite has 24 passing tests
+and 25 passing subtests; an existing target on a later page still prevents upload.
 
-The first accepted GPU canary exposed Kaggle's current Python3.13 image, which
-cannot install torchvision0.20.1. Workers now provision isolated Python3.11.14 with
-uv0.9.9 and execute both job creation and training with that interpreter. The
-focused launcher suite has25 passing tests and30 passing subtests, including
+The first accepted GPU canary exposed Kaggle's current Python 3.13 image, which
+cannot install torchvision 0.20.1. Workers now provision isolated Python 3.11.14 with
+uv 0.9.9 and execute both job creation and training with that interpreter. The
+focused launcher suite has 25 passing tests and 30 passing subtests, including
 failures at every provisioning stage and matched train/canary configurations.
 
 ## Final code verification
@@ -62,10 +62,10 @@ https://github.com/munnn01/t_scope_v3/actions/runs/43733966333.
 
 ## Initial two-update GPU canary
 
-The production canary completed on Tesla T4 using Python3.11.14,
-torch2.5.1+cu124, torchvision0.20.1+cu124 and FFmpeg6.1.1. It performed two
+The production canary completed on Tesla T4 using Python 3.11.14,
+torch 2.5.1+cu124, torchvision 0.20.1+cu124 and FFmpeg 6.1.1. It performed two
 optimizer updates with the real pretrained detector and the real x265 training path.
-The measured training loop took14.20997 seconds; peak allocated GPU memory was
+The measured training loop took 14.20997 seconds; peak allocated GPU memory was
 2,966,776,320 bytes. This timing excludes environment setup, weight download and
 data hashing, and is not a full throughput benchmark.
 
